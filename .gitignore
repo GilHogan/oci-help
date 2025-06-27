@@ -19,3 +19,7 @@
 *.pem
 build/
 example/
+
+mod/
+
+.idea

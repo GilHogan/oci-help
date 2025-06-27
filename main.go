@@ -1,24 +1,24 @@
 /*
-  甲骨文云API文档
-  https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/
+甲骨文云API文档
+https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/
 
-  实例:
-  https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/Instance/
-  VCN:
-  https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/Vcn/
-  Subnet:
-  https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/Subnet/
-  VNIC:
-  https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/Vnic/
-  VnicAttachment:
-  https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/VnicAttachment/
-  私有IP
-  https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/PrivateIp/
-  公共IP
-  https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/PublicIp/
+实例:
+https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/Instance/
+VCN:
+https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/Vcn/
+Subnet:
+https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/Subnet/
+VNIC:
+https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/Vnic/
+VnicAttachment:
+https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/VnicAttachment/
+私有IP
+https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/PrivateIp/
+公共IP
+https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/PublicIp/
 
-  获取可用性域
-  https://docs.oracle.com/en-us/iaas/api/#/en/identity/20160918/AvailabilityDomain/ListAvailabilityDomains
+获取可用性域
+https://docs.oracle.com/en-us/iaas/api/#/en/identity/20160918/AvailabilityDomain/ListAvailabilityDomains
 */
 package main
 
@@ -29,6 +29,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"gopkg.in/ini.v1"
 	"io"
 	"io/ioutil"
 	"math"
@@ -47,7 +48,6 @@ import (
 	"github.com/oracle/oci-go-sdk/v54/core"
 	"github.com/oracle/oci-go-sdk/v54/example/helpers"
 	"github.com/oracle/oci-go-sdk/v54/identity"
-	"gopkg.in/ini.v1"
 )
 
 const (
@@ -57,6 +57,7 @@ const (
 
 var (
 	configFilePath      string
+	action              string // New: Action to perform (e.g., "launch-all", "list-ips-all")
 	provider            common.ConfigurationProvider
 	computeClient       core.ComputeClient
 	networkClient       core.VirtualNetworkClient
@@ -122,6 +123,7 @@ type Result struct {
 func main() {
 	flag.StringVar(&configFilePath, "config", defConfigFilePath, "配置文件路径")
 	flag.StringVar(&configFilePath, "c", defConfigFilePath, "配置文件路径")
+	flag.StringVar(&action, "action", "", "要执行的操作: launch-all (批量创建实例), list-ips-all (批量导出IP)")
 	flag.Parse()
 
 	cfg, err := ini.Load(configFilePath)
@@ -160,7 +162,15 @@ func main() {
 	}
 	instanceBaseSection = cfg.Section("INSTANCE")
 
-	listOracleAccount()
+	switch action {
+	case "launch-all":
+		multiBatchLaunchInstances()
+	case "list-ips-all":
+		multiBatchListInstancesIp()
+	default:
+		listOracleAccount()
+	}
+
 }
 
 func listOracleAccount() {
@@ -186,11 +196,9 @@ func listOracleAccount() {
 			}
 			if strings.EqualFold(input, "oci") {
 				multiBatchLaunchInstances()
-				listOracleAccount()
 				return
 			} else if strings.EqualFold(input, "ip") {
 				multiBatchListInstancesIp()
-				listOracleAccount()
 				return
 			}
 			index, _ = strconv.Atoi(input)
@@ -1214,6 +1222,9 @@ func LaunchInstances(ads []identity.AvailabilityDomain) (sum, num int32) {
 
 			// API Errors: https://docs.cloud.oracle.com/Content/API/References/apierrors.htm
 
+			// 在此处添加打印语句，以显示 HTTP 状态码和错误代码
+			printf("\033[1;33m[%s] Service Error --> HTTP Status: %d, Code: %s\033[0m\n", oracleSectionName, servErr.GetHTTPStatusCode(), servErr.GetCode())
+
 			if isServErr && (400 <= servErr.GetHTTPStatusCode() && servErr.GetHTTPStatusCode() <= 405) ||
 				(servErr.GetHTTPStatusCode() == 409 && !strings.EqualFold(servErr.GetCode(), "IncorrectState")) ||
 				servErr.GetHTTPStatusCode() == 412 || servErr.GetHTTPStatusCode() == 413 || servErr.GetHTTPStatusCode() == 422 ||
@@ -1225,7 +1236,7 @@ func LaunchInstances(ads []identity.AvailabilityDomain) (sum, num int32) {
 				duration := fmtDuration(time.Since(startTime))
 				printf("\033[1;31m[%s] 第 %d 个实例创建失败了❌, 错误信息: \033[0m%s\n", oracleSectionName, pos+1, errInfo)
 				if EACH {
-					text := fmt.Sprintf("第 %d 个实例创建失败了❌\n错误信息: %s\n区域: %s\n可用性域: %s\n实例配置: %s\nOCPU计数: %g\n内存(GB): %g\n引导卷(GB): %g\n创建个数: %d\n尝试次数: %d\n耗时:%s", pos+1, errInfo, oracle.Region, *adName, *shape.Shape, *shape.Ocpus, *shape.MemoryInGBs, bootVolumeSize, sum, runTimes, duration)
+					text := fmt.Sprintf("第 %d 个实例创建失败了❌\n错误信息: %s\nHTTP Status: %d\nCode: %s\n区域: %s\n可用性域: %s\n实例配置: %s\nOCPU计数: %g\n内存(GB): %g\n引导卷(GB): %g\n创建个数: %d\n尝试次数: %d\n耗时:%s", pos+1, errInfo, servErr.GetHTTPStatusCode(), servErr.GetCode(), oracle.Region, *adName, *shape.Shape, *shape.Ocpus, *shape.MemoryInGBs, bootVolumeSize, sum, runTimes, duration)
 					sendMessage("", text)
 				}
 
