@@ -1225,7 +1225,7 @@ func LaunchInstances(ads []identity.AvailabilityDomain) (sum, num int32) {
 			// 在此处添加打印语句，以显示 HTTP 状态码和错误代码
 			printf("\033[1;33m[%s] Service Error --> HTTP Status: %d, Code: %s\033[0m\n", oracleSectionName, servErr.GetHTTPStatusCode(), servErr.GetCode())
 
-			if isServErr && (400 <= servErr.GetHTTPStatusCode() && servErr.GetHTTPStatusCode() <= 405) ||
+			if isServErr && (400 < servErr.GetHTTPStatusCode() && servErr.GetHTTPStatusCode() <= 405) ||
 				(servErr.GetHTTPStatusCode() == 409 && !strings.EqualFold(servErr.GetCode(), "IncorrectState")) ||
 				servErr.GetHTTPStatusCode() == 412 || servErr.GetHTTPStatusCode() == 413 || servErr.GetHTTPStatusCode() == 422 ||
 				servErr.GetHTTPStatusCode() == 431 || servErr.GetHTTPStatusCode() == 501 {
